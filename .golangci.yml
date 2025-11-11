@@ -1,0 +1,48 @@
+#version: "1"
+#run:
+#  timeout: 5m
+#
+#issues:
+#  exclude-rules:
+#  - path: _test.go
+#    linters:
+#    - errcheck
+#
+#linters-settings:
+#  errcheck:
+#    exclude-functions:
+#    - (github.com/go-kit/log.Logger).Log
+#    - fmt.Fprintln
+#    - fmt.Fprint
+
+version: "2"
+run:
+  timeout: 5m
+
+linters:
+  #disable:
+    #- goanalysis_metalinter
+  #default: all
+  #enable:
+  #  - typecheck
+  #  - unused
+  #  - ineffassign
+  #  - misspell
+  #  - gofmt
+  #  - goimports
+  #  - govet
+  #  - staticcheck
+  #exclusions:
+  #  rules:
+  #    - path: _test\.go
+  #      linters:
+  #        - errcheck
+  settings:
+    govet:
+      enable:
+      - shadow
+    errcheck:
+      exclude-functions:
+      - (github.com/go-kit/log.Logger).Log
+      - fmt.Fprintln
+      - fmt.Fprint

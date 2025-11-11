@@ -208,8 +208,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if (c.Defaults.ClientID != "" || c.Defaults.ClientSecret != "") && c.Defaults.PersonalAccessToken != "" {
-		return fmt.Errorf("bad auth config in defaults section: Client ID, Client Secret and PAT authentication are mutually exclusive")
+	if (c.Defaults.TenantID != "" || c.Defaults.ClientID != "" || c.Defaults.ClientSecret != "") && c.Defaults.PersonalAccessToken != "" {
+		return fmt.Errorf("bad auth config in defaults section: TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive")
 	}
 
 	if c.Defaults.AutoResolve != nil {
@@ -226,7 +226,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		// Check API access fields.
 		if rc.Organization == "" {
 			if c.Defaults.Organization == "" {
-				return fmt.Errorf("missing api_url in receiver %q", rc.Name)
+				return fmt.Errorf("missing organization in receiver %q", rc.Name)
 			}
 			rc.Organization = c.Defaults.Organization
 		}
@@ -234,11 +234,17 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("invalid organization %q in receiver %q: %s", rc.Organization, rc.Name, err)
 		}
 
-		if (rc.ClientID != "" || rc.ClientSecret != "") && rc.PersonalAccessToken != "" {
-			return fmt.Errorf("bad auth config in receiver %q: Client ID, Client Secret and PAT authentication are mutually exclusive", rc.Name)
+		if (rc.TenantID != "" || rc.ClientID != "" || rc.ClientSecret != "") && rc.PersonalAccessToken != "" {
+			return fmt.Errorf("bad auth config in receiver %q: TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive", rc.Name)
 		}
 
-		if (rc.ClientID == "" || rc.ClientSecret == "") && rc.PersonalAccessToken == "" {
+		// Fix: Check if we need to use OAuth (TenantID/ClientID/ClientSecret) or PAT
+		if rc.PersonalAccessToken == "" {
+			// PAT is not provided, so we need OAuth credentials
+			if rc.TenantID == "" && c.Defaults.TenantID != "" {
+				rc.TenantID = c.Defaults.TenantID
+			}
+
 			if rc.ClientID == "" && c.Defaults.ClientID != "" {
 				rc.ClientID = c.Defaults.ClientID
 			}
@@ -247,12 +253,19 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				rc.ClientSecret = c.Defaults.ClientSecret
 			}
 
-			if rc.ClientID != "" && rc.ClientSecret != "" {
-				// Nothing to do, we're ready to go with basic auth.
-			} else if c.Defaults.PersonalAccessToken != "" {
-				rc.PersonalAccessToken = c.Defaults.PersonalAccessToken
-			} else {
-				return fmt.Errorf("missing authentication in receiver %q", rc.Name)
+			// Check if we have complete OAuth credentials
+			if rc.TenantID == "" || rc.ClientID == "" || rc.ClientSecret == "" {
+				// OAuth is incomplete, check if we can use PAT from defaults
+				if c.Defaults.PersonalAccessToken != "" {
+					rc.PersonalAccessToken = c.Defaults.PersonalAccessToken
+				} else {
+					return fmt.Errorf("missing authentication in receiver %q", rc.Name)
+				}
+			}
+		} else {
+			// PAT is provided, check for conflicts with OAuth fields
+			if rc.TenantID != "" || rc.ClientID != "" || rc.ClientSecret != "" {
+				return fmt.Errorf("TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive in receiver %q", rc.Name)
 			}
 		}
 

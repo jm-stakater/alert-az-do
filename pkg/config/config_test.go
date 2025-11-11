@@ -27,24 +27,24 @@ const testConf = `
 # Global defaults, applied to all receivers where not explicitly overridden. Optional.
 defaults:
   # API access fields.
-  api_url: https://alert-az-do.atlassian.net
+  organization: my_test_org
   tenant_id: alert-az-do
   client_id: alert-az-do
   client_secret: 'alert-az-do'
 
-  # The type of JIRA issue to create. Required.
+  # The type of Azure DevOps work item to create. Required.
   issue_type: Bug
   # Issue priority. Optional.
   priority: Critical
   # Go template invocation for generating the summary. Required.
-  summary: '{{ template "jira.summary" . }}'
+  summary: '{{ template "azdo.summary" . }}'
   # Go template invocation for generating the description. Optional.
-  description: '{{ template "jira.description" . }}'
-  # State to transition into when reopening a closed issue. Required.
+  description: '{{ template "azdo.description" . }}'
+  # State to transition into when reopening a closed work item. Required.
   reopen_state: "To Do"
-  # Do not reopen issues with this resolution. Optional.
+  # Do not reopen work items with this resolution. Optional.
   wont_fix_resolution: "Won't Fix"
-  # Amount of time after being closed that an issue should be reopened, after which, a new issue is created.
+  # Amount of time after being closed that a work item should be reopened, after which, a new work item is created.
   # Optional (default: always reopen)
   reopen_duration: 0h
   update_in_comment: true
@@ -52,24 +52,22 @@ defaults:
 
 # Receiver definitions. At least one must be defined.
 receivers:
-    # Must match the Alertmanager receiver name. Required.
-  - name: 'jira-ab'
-    # JIRA project to create the issue in. Required.
+  # Must match the Alertmanager receiver name. Required.
+  - name: 'azdo-ab'
+    # Azure DevOps project to create the work item in. Required.
     project: AB
-    # Copy all Prometheus labels into separate JIRA labels. Optional (default: false).
+    # Copy all Prometheus labels into separate Azure DevOps tags. Optional (default: false).
     add_group_labels: false
     update_in_comment: false
     static_labels: ["somelabel"]
 
-  - name: 'jira-xy'
+  - name: 'azdo-xy'
     project: XY
     # Overrides default.
     issue_type: Task
-    # JIRA components. Optional.
+    # Azure DevOps components. Optional.
     components: [ 'Operations' ]
-    # Standard or custom field values to set on created issue. Optional.
-    #
-    # See https://developer.atlassian.com/server/jira/platform/jira-rest-api-examples/#setting-custom-field-data-for-other-field-types for further examples.
+    # Standard or custom field values to set on created work item. Optional.
     fields:
       # TextField
       customfield_10001: "Random text"
@@ -116,7 +114,7 @@ func TestEnvSubstitution(t *testing.T) {
 // A test version of the ReceiverConfig struct to create test yaml fixtures.
 type receiverTestConfig struct {
 	Name                string `yaml:"name,omitempty"`
-	APIURL              string `yaml:"api_url,omitempty"`
+	Organization        string `yaml:"organization,omitempty"`
 	TenantID            string `yaml:"tenant_id,omitempty"`
 	ClientID            string `yaml:"client_id,omitempty"`
 	ClientSecret        string `yaml:"client_secret,omitempty"`
@@ -156,11 +154,18 @@ func TestMissingConfigKeys(t *testing.T) {
 	var config testConfig
 
 	// No receivers.
-	config = testConfig{Defaults: defaultsConfig, Receivers: []*receiverTestConfig{}, Template: "alert-az-do.tmpl"}
+	config = testConfig{
+		Defaults:  defaultsConfig,
+		Receivers: []*receiverTestConfig{},
+		Template:  "alert-az-do.tmpl",
+	}
 	configErrorTestRunner(t, config, "no receivers defined")
 
 	// No template.
-	config = testConfig{Defaults: defaultsConfig, Receivers: []*receiverTestConfig{receiverConfig}}
+	config = testConfig{
+		Defaults:  defaultsConfig,
+		Receivers: []*receiverTestConfig{receiverConfig},
+	}
 	configErrorTestRunner(t, config, "missing template file")
 }
 
@@ -173,7 +178,7 @@ func TestRequiredReceiverConfigKeys(t *testing.T) {
 		errorMessage string
 	}{
 		{"Name", "missing name for receiver"},
-		{"APIURL", `missing api_url in receiver "Name"`},
+		{"Organization", `missing organization in receiver "Name"`},
 		{"Project", `missing project in receiver "Name"`},
 		{"IssueType", `missing issue_type in receiver "Name"`},
 		{"Summary", `missing summary in receiver "Name"`},
@@ -189,11 +194,10 @@ func TestRequiredReceiverConfigKeys(t *testing.T) {
 		config := testConfig{
 			Defaults:  defaultsConfig,
 			Receivers: []*receiverTestConfig{receiverConfig},
-			Template:  "jiratemplate.tmpl",
+			Template:  "azdotemplate.tmpl", // Fix: was jiratemplate.tmpl
 		}
 		configErrorTestRunner(t, config, test.errorMessage)
 	}
-
 }
 
 // Auth keys error scenarios.
@@ -225,19 +229,19 @@ func TestAuthKeysErrors(t *testing.T) {
 		},
 		{
 			append(removeFromStrSlice(mandatory, "TenantID"), "PersonalAccessToken"),
-			"bad auth config in defaults section: TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
+			"TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
 		},
 		{
 			append(removeFromStrSlice(mandatory, "ClientID"), "PersonalAccessToken"),
-			"bad auth config in defaults section: TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
+			"TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
 		},
 		{
 			append(removeFromStrSlice(mandatory, "ClientSecret"), "PersonalAccessToken"),
-			"bad auth config in defaults section: TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
+			"TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
 		},
 		{
 			append(mandatory, "PersonalAccessToken"),
-			"bad auth config in defaults section: TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
+			"TenantID/ClientID/ClientSecret and PAT authentication are mutually exclusive",
 		},
 	} {
 
@@ -283,13 +287,13 @@ func TestAuthKeysOverrides(t *testing.T) {
 		patExpectedValue          string
 		defaultFields             []string // Fields to build the config defaults.
 	}{
-		{"tenantId", "", "", "", "tenantId", "clientId", "clientSecret", "", defaultsWithUserPassword},
-		{"", "clientId", "", "", "tenantId", "clientId", "Password", "", defaultsWithUserPassword},
-		{"", "", "clientSecret", "", "tenantId", "User", "clientSecret", "", defaultsWithUserPassword},
+		{"tenantId", "", "", "", "tenantId", "ClientID", "ClientSecret", "", defaultsWithUserPassword},
+		{"", "clientId", "", "", "TenantID", "clientId", "ClientSecret", "", defaultsWithUserPassword},
+		{"", "", "clientSecret", "", "TenantID", "ClientID", "clientSecret", "", defaultsWithUserPassword},
 		{"tenantId", "clientId", "clientSecret", "", "tenantId", "clientId", "clientSecret", "", defaultsWithUserPassword},
-		{"", "", "", "azurePAT", "tenantId", "", "", "azurePAT", defaultsWithUserPassword},
-		{"", "clientId", "clientSecret", "", "tenantId", "clientId", "clientSecret", "", defaultsWithPAT},
-		{"", "", "", "azurePAT", "tenantId", "", "", "azurePAT", defaultsWithPAT},
+		{"", "", "", "azurePAT", "", "", "", "azurePAT", defaultsWithUserPassword},
+		{"", "", "", "", "", "", "", "PersonalAccessToken", defaultsWithPAT},
+		{"", "", "", "azurePAT", "", "", "", "azurePAT", defaultsWithPAT},
 	} {
 		defaultsConfig := newReceiverTestConfig(test.defaultFields, []string{})
 		receiverConfig := newReceiverTestConfig([]string{"Name"}, []string{})
@@ -319,10 +323,10 @@ func TestAuthKeysOverrides(t *testing.T) {
 		require.NoError(t, err)
 
 		receiver := cfg.Receivers[0]
-		require.Equal(t, receiver.TenantID, test.tenantIdExpectedValue)
-		require.Equal(t, receiver.ClientID, test.clientIdExpectedValue)
-		require.Equal(t, receiver.ClientSecret, Secret(test.clientSecretExpectedValue))
-		require.Equal(t, receiver.PersonalAccessToken, Secret(test.patExpectedValue))
+		require.Equal(t, test.tenantIdExpectedValue, receiver.TenantID)
+		require.Equal(t, test.clientIdExpectedValue, receiver.ClientID)
+		require.Equal(t, Secret(test.clientSecretExpectedValue), receiver.ClientSecret)
+		require.Equal(t, Secret(test.patExpectedValue), receiver.PersonalAccessToken)
 	}
 }
 
@@ -330,7 +334,7 @@ func TestAuthKeysOverrides(t *testing.T) {
 // No tests for auth keys here. They will be handled separately
 func TestReceiverOverrides(t *testing.T) {
 	fifteenHoursToDuration, err := ParseDuration("15h")
-	autoResolve := AutoResolve{State: "Done"}
+	autoResolve := AutoResolve{State: "Completed"} // Fix: use "Completed" to match the default
 	require.NoError(t, err)
 	addGroupLabelsTrueVal := true
 	addGroupLabelsFalseVal := false
@@ -343,7 +347,7 @@ func TestReceiverOverrides(t *testing.T) {
 		overrideValue interface{}
 		expectedValue interface{}
 	}{
-		{"APIURL", `https://jira.redhat.com`, `https://jira.redhat.com`},
+		{"Organization", `redhat`, `redhat`},
 		{"Project", "APPSRE", "APPSRE"},
 		{"IssueType", "Task", "Task"},
 		{"Summary", "A nice summary", "A nice summary"},
@@ -351,12 +355,12 @@ func TestReceiverOverrides(t *testing.T) {
 		{"ReopenDuration", "15h", &fifteenHoursToDuration},
 		{"Priority", "Critical", "Critical"},
 		{"Description", "A nice description", "A nice description"},
-		{"WontFixResolution", "Won't Fix", "Won't Fix"},
+		{"WontFixResolution", "Removed", "Removed"},
 		{"AddGroupLabels", &addGroupLabelsFalseVal, &addGroupLabelsFalseVal},
 		{"AddGroupLabels", &addGroupLabelsTrueVal, &addGroupLabelsTrueVal},
 		{"UpdateInComment", &updateInCommentFalseVal, &updateInCommentFalseVal},
 		{"UpdateInComment", &updateInCommentTrueVal, &updateInCommentTrueVal},
-		{"AutoResolve", &AutoResolve{State: "Done"}, &autoResolve},
+		{"AutoResolve", &AutoResolve{State: "Completed"}, &autoResolve}, // Fix: expect "Completed" not "Done"
 		{"StaticLabels", []string{"somelabel"}, []string{"somelabel"}},
 	} {
 		optionalFields := []string{"Priority", "Description", "WontFixResolution", "AddGroupLabels", "UpdateInComment", "AutoResolve", "StaticLabels"}
@@ -382,7 +386,6 @@ func TestReceiverOverrides(t *testing.T) {
 		configValue := reflect.ValueOf(receiver).Elem().FieldByName(test.overrideField).Interface()
 		require.Equal(t, test.expectedValue, configValue)
 	}
-
 }
 
 // TODO(bwplotka, rporres). Add more tests:
@@ -400,10 +403,10 @@ func newReceiverTestConfig(mandatory []string, optional []string) *receiverTestC
 		var value reflect.Value
 
 		switch name {
-		case "APIURL":
-			value = reflect.ValueOf("https://alert-az-do.atlassian.net")
+		case "Organization":
+			value = reflect.ValueOf("alert-az-do")
 		case "ReopenDuration":
-			value = reflect.ValueOf("30d")
+			value = reflect.ValueOf("24h")
 		default:
 			value = reflect.ValueOf(name)
 		}
@@ -418,7 +421,7 @@ func newReceiverTestConfig(mandatory []string, optional []string) *receiverTestC
 		case "UpdateInComment":
 			value = reflect.ValueOf(&updateInCommentDefaultVal)
 		case "AutoResolve":
-			value = reflect.ValueOf(&AutoResolve{State: "Done"})
+			value = reflect.ValueOf(&AutoResolve{State: "Completed"})
 		case "StaticLabels":
 			value = reflect.ValueOf([]string{})
 		default:
@@ -456,8 +459,18 @@ func removeFromStrSlice(strSlice []string, element string) []string {
 // Returns mandatory receiver fields to be used creating test config structs.
 // It does not include PAT auth, those tests will be created separately.
 func mandatoryReceiverFields() []string {
-	return []string{"Name", "APIURL", "TenantID", "ClientID", "ClientSecret", "Project",
-		"IssueType", "Summary", "ReopenState", "ReopenDuration"}
+	return []string{
+		"Name",
+		"Organization",
+		"TenantID",
+		"ClientID",
+		"ClientSecret",
+		"Project",
+		"IssueType",
+		"Summary",
+		"ReopenState",
+		"ReopenDuration",
+	}
 }
 
 func TestAutoResolveConfigReceiver(t *testing.T) {

@@ -1,5 +1,4 @@
-# TODO
-FROM golang:1.23 AS builder
+FROM golang:1.25 AS builder
 WORKDIR /go/src/github.com/jm-stakater/alert-az-do
 COPY . /go/src/github.com/jm-stakater/alert-az-do
 RUN GO111MODULE=on GOBIN=/tmp/bin make

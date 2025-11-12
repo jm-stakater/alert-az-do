@@ -1,13 +1,12 @@
-# TODO
 go:
-    version: 1.14
+  version: 1.14
 repository:
-    path: github.com/jm-stakater/alert-az-do
+  path: github.com/jm-stakater/alert-az-do
 build:
-    binaries:
-        - name: alert-az-do
-          path: cmd/alert-az-do 
-    flags: -a -tags netgo
+  binaries:
+  - name: alert-az-do
+    path: cmd/alert-az-do 
+  flags: -a -tags netgo
 crossbuild:
-    platforms:
-        - linux/amd64
+  platforms:
+  - linux/amd64

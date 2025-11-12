@@ -1,9 +1,10 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2025 Stakater AB
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-// http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,7 +26,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/trivago/tgo/tcontainer"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -141,12 +141,16 @@ type ReceiverConfig struct {
 	ReopenDuration *Duration `yaml:"reopen_duration" json:"reopen_duration"`
 
 	// Optional issue fields
-	Priority          string                 `yaml:"priority" json:"priority"`
-	Description       string                 `yaml:"description" json:"description"`
-	WontFixResolution string                 `yaml:"wont_fix_resolution" json:"wont_fix_resolution"`
-	Fields            map[string]interface{} `yaml:"fields" json:"fields"`
-	Components        []string               `yaml:"components" json:"components"`
-	StaticLabels      []string               `yaml:"static_labels" json:"static_labels"`
+	Priority        string                 `yaml:"priority" json:"priority"`
+	Description     string                 `yaml:"description" json:"description"`
+	SkipReopenState string                 `yaml:"skip_reopen_state" json:"skip_reopen_state"`
+	Fields          map[string]interface{} `yaml:"fields" json:"fields"`
+	Components      []string               `yaml:"components" json:"components"`
+	StaticLabels    []string               `yaml:"static_labels" json:"static_labels"`
+
+	// Azure DevOps specific fields - Add missing fields
+	AreaPath      string `yaml:"area_path" json:"area_path"`
+	IterationPath string `yaml:"iteration_path" json:"iteration_path"`
 
 	// Label copy settings
 	AddGroupLabels *bool `yaml:"add_group_labels" json:"add_group_labels"`
@@ -167,13 +171,6 @@ func (rc *ReceiverConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	if err := unmarshal((*plain)(rc)); err != nil {
 		return err
 	}
-	// Recursively convert any maps to map[string]interface{}, filtering out all non-string keys, so the json encoder
-	// doesn't blow up when marshaling JIRA requests.
-	fieldsWithStringKeys, err := tcontainer.ConvertToMarshalMap(rc.Fields, func(v string) string { return v })
-	if err != nil {
-		return err
-	}
-	rc.Fields = fieldsWithStringKeys
 	return checkOverflow(rc.XXX, "receiver")
 }
 
@@ -308,8 +305,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if rc.Description == "" && c.Defaults.Description != "" {
 			rc.Description = c.Defaults.Description
 		}
-		if rc.WontFixResolution == "" && c.Defaults.WontFixResolution != "" {
-			rc.WontFixResolution = c.Defaults.WontFixResolution
+		if rc.SkipReopenState == "" && c.Defaults.SkipReopenState != "" {
+			rc.SkipReopenState = c.Defaults.SkipReopenState
 		}
 		if rc.AutoResolve != nil {
 			if rc.AutoResolve.State == "" {

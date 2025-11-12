@@ -1,15 +1,17 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2025 Stakater AB
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-// http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package config
 
 import (
@@ -42,8 +44,8 @@ defaults:
   description: '{{ template "azdo.description" . }}'
   # State to transition into when reopening a closed work item. Required.
   reopen_state: "To Do"
-  # Do not reopen work items with this resolution. Optional.
-  wont_fix_resolution: "Won't Fix"
+  # Do not reopen issues that are in this state. Optional.
+  skip_reopen_state: "Removed"
   # Amount of time after being closed that a work item should be reopened, after which, a new work item is created.
   # Optional (default: always reopen)
   reopen_duration: 0h
@@ -52,7 +54,7 @@ defaults:
 
 # Receiver definitions. At least one must be defined.
 receivers:
-  # Must match the Alertmanager receiver name. Required.
+    # Must match the Alertmanager receiver name. Required.
   - name: 'azdo-ab'
     # Azure DevOps project to create the work item in. Required.
     project: AB
@@ -65,16 +67,16 @@ receivers:
     project: XY
     # Overrides default.
     issue_type: Task
+    # Azure DevOps area path. Optional.
+    area_path: 'Operations'
+    # Azure DevOps iteration path. Optional.
+    iteration_path: 'Sprint 1'
     # Azure DevOps components. Optional.
     components: [ 'Operations' ]
     # Standard or custom field values to set on created work item. Optional.
     fields:
-      # TextField
-      customfield_10001: "Random text"
-      # SelectList
-      customfield_10002: { "value": "red" }
-      # MultiSelect
-      customfield_10003: [{"value": "red" }, {"value": "blue" }, {"value": "green" }]
+      System.AssignedTo: "admin@contoso.com"
+      Custom.Field: "{{ .CommonLabels.severity }}"
 
 # File containing template definitions. Required.
 template: alert-az-do.tmpl
@@ -125,12 +127,12 @@ type receiverTestConfig struct {
 	ReopenState         string `yaml:"reopen_state,omitempty"`
 	ReopenDuration      string `yaml:"reopen_duration,omitempty"`
 
-	Priority          string   `yaml:"priority,omitempty"`
-	Description       string   `yaml:"description,omitempty"`
-	WontFixResolution string   `yaml:"wont_fix_resolution,omitempty"`
-	AddGroupLabels    *bool    `yaml:"add_group_labels,omitempty"`
-	UpdateInComment   *bool    `yaml:"update_in_comment,omitempty"`
-	StaticLabels      []string `yaml:"static_labels" json:"static_labels"`
+	Priority        string   `yaml:"priority,omitempty"`
+	Description     string   `yaml:"description,omitempty"`
+	SkipReopenState string   `yaml:"skip_reopen_state,omitempty"`
+	AddGroupLabels  *bool    `yaml:"add_group_labels,omitempty"`
+	UpdateInComment *bool    `yaml:"update_in_comment,omitempty"`
+	StaticLabels    []string `yaml:"static_labels" json:"static_labels"`
 
 	AutoResolve *AutoResolve `yaml:"auto_resolve" json:"auto_resolve"`
 
@@ -355,7 +357,7 @@ func TestReceiverOverrides(t *testing.T) {
 		{"ReopenDuration", "15h", &fifteenHoursToDuration},
 		{"Priority", "Critical", "Critical"},
 		{"Description", "A nice description", "A nice description"},
-		{"WontFixResolution", "Removed", "Removed"},
+		{"SkipReopenState", "Removed", "Removed"},
 		{"AddGroupLabels", &addGroupLabelsFalseVal, &addGroupLabelsFalseVal},
 		{"AddGroupLabels", &addGroupLabelsTrueVal, &addGroupLabelsTrueVal},
 		{"UpdateInComment", &updateInCommentFalseVal, &updateInCommentFalseVal},
@@ -363,7 +365,7 @@ func TestReceiverOverrides(t *testing.T) {
 		{"AutoResolve", &AutoResolve{State: "Completed"}, &autoResolve}, // Fix: expect "Completed" not "Done"
 		{"StaticLabels", []string{"somelabel"}, []string{"somelabel"}},
 	} {
-		optionalFields := []string{"Priority", "Description", "WontFixResolution", "AddGroupLabels", "UpdateInComment", "AutoResolve", "StaticLabels"}
+		optionalFields := []string{"Priority", "Description", "SkipReopenState", "AddGroupLabels", "UpdateInComment", "AutoResolve", "StaticLabels"}
 		defaultsConfig := newReceiverTestConfig(mandatoryReceiverFields(), optionalFields)
 		receiverConfig := newReceiverTestConfig([]string{"Name"}, optionalFields)
 

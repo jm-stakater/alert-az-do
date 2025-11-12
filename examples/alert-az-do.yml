@@ -21,8 +21,8 @@ defaults:
   description: '{{ template "azdo.description" . }}'
   # State to transition into when reopening a closed issue. Required.
   reopen_state: "Ready"
-  # Do not reopen issues with this resolution. Optional.
-  wont_fix_resolution: "Removed"
+  # Do not reopen issues that are in this state. Optional.
+  skip_reopen_state: "Removed"
   # Amount of time after being closed that an issue should be reopened, after which, a new issue is created.
   # Optional (default: always reopen)
   reopen_duration: 0h
@@ -52,16 +52,16 @@ defaults:
 receivers:
     # Must match the Alertmanager receiver name. Required.
   - name: 'contoso-ab'
-    # JIRA project to create the issue in. Required.
+    # Azure DevOps project to create the issue in. Required.
     project: AB
-    # Copy all Prometheus labels into separate JIRA labels. Optional (default: false).
+    # Copy all Prometheus labels into separate Azure DevOps labels. Optional (default: false).
     add_group_labels: false
     # Include ticket update as comment too. Optional (default: false).
     update_in_comment: false
     # Will be merged with the static_labels from the default map
     static_labels: ["anotherLabel"]
 
-  - name: 'jira-xy'
+  - name: 'contoso-xy'
     project: XY
     # Overrides default.
     issue_type: Task
@@ -70,19 +70,14 @@ receivers:
     # Azure DevOps iteration path. Optional.
     iteration_path: 'Datacenter'
     # Standard or custom field values to set on created issue. Optional.
-    #
-    # See https://developer.atlassian.com/server/jira/platform/jira-rest-api-examples/#setting-custom-field-data-for-other-field-types for further examples.
-    # Standard or custom field values to set on created issue. Optional.
     fields:
-      - field: System.AssignedTo
-        value: '{{ .alerts[0].labels["owner"] }}'
+      System.AssignedTo: '{{ .alerts[0].labels["owner"] }}'
     #
-    # Automatically resolve jira issues when alert is resolved. Optional. If declared, ensure state is not an empty string.
+    # Automatically resolve Azure DevOps issues when alert is resolved. Optional. If declared, ensure state is not an empty string.
     auto_resolve:
       state: 'Completed'
     # Include ticket update as comment too. Optional (default: false).
     update_in_comment: true
-
 
 # File containing template definitions. Required.
 template: alert-az-do.tmpl

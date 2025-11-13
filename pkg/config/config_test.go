@@ -19,6 +19,7 @@ import (
 	"path"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
@@ -366,7 +367,8 @@ func TestAuthKeysOverrides(t *testing.T) {
 // Tests regarding yaml keys overriden in the receiver config.
 // No tests for auth keys here. They will be handled separately
 func TestReceiverOverrides(t *testing.T) {
-	fifteenHoursToDuration, err := ParseDuration("15h")
+	fifteenHoursToDuration, err := time.ParseDuration("15h")
+	//fifteenHoursToDuration, err := ParseDuration("15h")
 	autoResolve := AutoResolve{State: "Completed"} // Fix: use "Completed" to match the default
 	require.NoError(t, err)
 	addGroupLabelsTrueVal := true

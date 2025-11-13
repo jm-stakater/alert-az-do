@@ -55,7 +55,8 @@ var funcs = template.FuncMap{
 		return os.Getenv(name)
 	},
 	"marshal": func(v interface{}) html.JS {
-		a, _ := json.Marshal(v)
+		//a, _ := json.Marshal(v)
+		a, _ := json.MarshalIndent(v, "", "  ")
 		return html.JS(a)
 	},
 }

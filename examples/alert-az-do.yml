@@ -3,14 +3,15 @@
 defaults:
   # API access fields.
   organization: contoso
-  tenant_id: alert-az-do
-  client_id: alert-az-do
-  subscription_id: alert-az-do
-  # Get password from the $PASSWORD environment variable.
-  client_secret: $(PASSWORD)
+  # Get credentials from the environment variables.
+  tenant_id: $(AZURE_TENANT_ID)
+  subscription_id: $(AZURE_SUBSCRIPTION_ID)
+  # Use generic credentials for all receivers.
+  client_id: $(AZURE_CLIENT_ID)
+  client_secret: $(AZURE_CLIENT_SECRET)
   # Alternatively to user and password use a Personal Access Token
   # See https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=Windows
-  # personal_access_token: "Your Personal Access Token"
+  # personal_access_token: $(AZURE_PAT)
 
   # The type of Azure DevOps work item to create. Required.
   issue_type: Issue
@@ -55,6 +56,10 @@ receivers:
   - name: 'contoso-ab'
     # Azure DevOps project to create the issue in. Required.
     project: AB
+    # Use receiver specific API access fields.
+    #client_id: $(AZURE_CLIENT_ID)
+    #client_secret: $(AZURE_CLIENT_SECRET)
+
     # Copy all Prometheus labels into separate Azure DevOps labels. Optional (default: false).
     add_group_labels: false
     # Include ticket update as comment too. Optional (default: false).
@@ -64,6 +69,8 @@ receivers:
 
   - name: 'contoso-xy'
     project: XY
+    # Use receiver specific API access fields.
+    personal_access_token: $(AZURE_PAT)
     # Overrides default.
     issue_type: Task
     # Azure DevOps area path. Optional.

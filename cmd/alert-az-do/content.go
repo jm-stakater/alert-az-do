@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -23,14 +24,13 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/jm-stakater/alert-az-do/pkg/alertmanager"
+	"github.com/jm-stakater/alert-az-do/pkg/azure"
 	"github.com/jm-stakater/alert-az-do/pkg/config"
 	"github.com/jm-stakater/alert-az-do/pkg/notify"
 	tmpl "github.com/jm-stakater/alert-az-do/pkg/template"
-	v7 "github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 
 	_ "net/http/pprof"
 )
@@ -110,10 +110,11 @@ func pageTemplate(name string) *template.Template {
 	return template.Must(template.Must(allTemplates.Clone()).Parse(pageTemplate))
 }
 
+/*
 func getScopes() []string {
 	return []string{"499b84ac-1321-427f-aa17-267ca6975798/.default"}
 }
-
+*/
 // HomeHandlerFunc is the HTTP handler for the home page (`/`).
 func HomeHandlerFunc() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -168,41 +169,10 @@ func AlertHandlerFunc(ctx context.Context, logger log.Logger, config *config.Con
 		}
 		level.Debug(logger).Log("msg", "  matched receiver", "receiver", conf.Name)
 
-		// Azure credential selection with proper authentication patterns
-		var cred azcore.TokenCredential
-		var err error
-
-		if conf.TenantID != "" && conf.ClientID != "" && conf.ClientSecret != "" {
-			// Service Principal authentication (TenantID + ClientID + ClientSecret)
-			cred, err = azidentity.NewClientSecretCredential(string(conf.TenantID), string(conf.ClientID), string(conf.ClientSecret), nil)
-		} else if conf.ClientID != "" && conf.SubscriptionID != "" {
-			// Managed Identity authentication (ClientID + SubscriptionID)
-			cred, err = azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
-				ID: azidentity.ClientID(string(conf.ClientID)),
-			})
-		} else if conf.PersonalAccessToken != "" {
-			// Personal Access Token (PAT) authentication
-			cred, err = azidentity.NewUsernamePasswordCredential("", "", "", string(conf.PersonalAccessToken), nil)
-		} else {
-			err = fmt.Errorf("no valid authentication method configured")
-		}
-
+		conn, err := azure.GetConnection(ctx, logger, conf)
 		if err != nil {
 			errorHandler(w, http.StatusInternalServerError, err, conf.Name, &data, logger)
 			return
-		}
-
-		token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: getScopes(),
-		})
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to create Azure DevOps client", "err", err)
-			errorHandler(w, http.StatusInternalServerError, err, conf.Name, &data, logger)
-		}
-
-		conn := &v7.Connection{
-			AuthorizationString: fmt.Sprintf("Bearer %s", token.Token),
-			BaseUrl:             fmt.Sprintf("https://dev.azure.com/%s", conf.Organization),
 		}
 
 		if err := notify.NewReceiver(ctx, logger, conf, tmpl, conn).Notify(ctx, &data); err != nil {
@@ -212,4 +182,17 @@ func AlertHandlerFunc(ctx context.Context, logger log.Logger, config *config.Con
 		}
 		requestTotal.WithLabelValues(conf.Name, "200").Inc()
 	}
+}
+
+type BasicCredential struct {
+	Username string
+	Password string
+}
+
+func (c *BasicCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	var t = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", c.Username, c.Password)))
+	token := azcore.AccessToken{
+		Token: t,
+	}
+	return token, nil
 }

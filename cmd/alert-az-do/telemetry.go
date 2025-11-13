@@ -19,7 +19,7 @@ import "github.com/prometheus/client_golang/prometheus"
 var (
 	requestTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "alert-az-do_requests_total",
+			Name: "alert_az_do_requests_total",
 			Help: "Requests processed, by receiver and status code.",
 		},
 		[]string{"receiver", "code"},

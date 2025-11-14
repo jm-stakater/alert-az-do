@@ -16,14 +16,11 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/jm-stakater/alert-az-do/pkg/alertmanager"
@@ -110,11 +107,6 @@ func pageTemplate(name string) *template.Template {
 	return template.Must(template.Must(allTemplates.Clone()).Parse(pageTemplate))
 }
 
-/*
-func getScopes() []string {
-	return []string{"499b84ac-1321-427f-aa17-267ca6975798/.default"}
-}
-*/
 // HomeHandlerFunc is the HTTP handler for the home page (`/`).
 func HomeHandlerFunc() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -182,17 +174,4 @@ func AlertHandlerFunc(ctx context.Context, logger log.Logger, config *config.Con
 		}
 		requestTotal.WithLabelValues(conf.Name, "200").Inc()
 	}
-}
-
-type BasicCredential struct {
-	Username string
-	Password string
-}
-
-func (c *BasicCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	var t = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", c.Username, c.Password)))
-	token := azcore.AccessToken{
-		Token: t,
-	}
-	return token, nil
 }

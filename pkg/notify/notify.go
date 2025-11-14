@@ -95,7 +95,7 @@ func (r *Receiver) updateWorkItem(ctx context.Context, data *alertmanager.Data, 
 		return errors.Wrap(err, "update work item")
 	}
 
-	level.Info(r.logger).Log("msg", "work item updated", "id", workItem.Id, "title", (*workItem.Fields)["System.Title"].(string))
+	level.Info(r.logger).Log("msg", "work item updated", "id", workItem.Id, "title", (*workItem.Fields)[WorkItemFieldTitle.String()].(string))
 	return nil
 }
 
@@ -122,7 +122,7 @@ func (r *Receiver) createWorkItem(ctx context.Context, data *alertmanager.Data, 
 		return errors.Wrap(err, "create work item")
 	}
 
-	level.Info(r.logger).Log("msg", "work item created", "id", workItem.Id, "title", (*workItem.Fields)["System.Title"].(string))
+	level.Info(r.logger).Log("msg", "work item created", "id", workItem.Id, "title", (*workItem.Fields)[WorkItemFieldTitle.String()].(string))
 	return nil
 }
 
@@ -132,7 +132,12 @@ func (r *Receiver) findWorkItem(ctx context.Context, data *alertmanager.Data, pr
 	}
 
 	fingerprint := data.Alerts[0].Fingerprint
-	wiql := fmt.Sprintf("SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '%s' AND [System.Tags] CONTAINS 'Fingerprint:%s'", project, fingerprint)
+	wiql := fmt.Sprintf("SELECT [%s] FROM WorkItems WHERE [%s] = '%s' AND [%s] CONTAINS 'Fingerprint:%s'",
+		WorkItemFieldId.String(),
+		WorkItemFieldTeamProject.String(),
+		project,
+		WorkItemFieldTags.String(),
+		fingerprint)
 
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql: &workitemtracking.Wiql{
@@ -198,10 +203,9 @@ func (r *Receiver) generateWorkItemDocument(data *alertmanager.Data, addFingerpr
 		return nil, errors.Wrap(err, "render title")
 	}
 
-	systemTitlePath := "/fields/System.Title"
 	document = append(document, webapi.JsonPatchOperation{
 		Op:    &webapi.OperationValues.Add,
-		Path:  &systemTitlePath,
+		Path:  stringPtr(WorkItemFieldTitle.FieldPath()),
 		Value: title,
 	})
 
@@ -210,21 +214,32 @@ func (r *Receiver) generateWorkItemDocument(data *alertmanager.Data, addFingerpr
 	if err != nil {
 		return nil, errors.Wrap(err, "render description")
 	}
-	systemDescriptionPath := "/fields/System.Description"
+
 	document = append(document, webapi.JsonPatchOperation{
 		Op:    &webapi.OperationValues.Add,
-		Path:  &systemDescriptionPath,
+		Path:  stringPtr(WorkItemFieldDescription.FieldPath()),
 		Value: description,
 	})
 
 	// Add fingerprint tag if creating new work item
 	if addFingerprint && len(data.Alerts) > 0 {
 		fingerprint := data.Alerts[0].Fingerprint
-		systemTagsPath := "/fields/System.Tags"
 		document = append(document, webapi.JsonPatchOperation{
 			Op:    &webapi.OperationValues.Add,
-			Path:  &systemTagsPath,
+			Path:  stringPtr(WorkItemFieldTags.FieldPath()),
 			Value: fmt.Sprintf("Fingerprint:%s", fingerprint),
+		})
+	}
+
+	if r.conf.Priority != "" {
+		priorityValue, err := r.tmpl.Execute(r.conf.Priority, data)
+		if err != nil {
+			return nil, errors.Wrap(err, "render priority")
+		}
+		document = append(document, webapi.JsonPatchOperation{
+			Op:    &webapi.OperationValues.Add,
+			Path:  stringPtr(WorkItemFieldPriority.FieldPath()),
+			Value: priorityValue,
 		})
 	}
 
@@ -234,13 +249,27 @@ func (r *Receiver) generateWorkItemDocument(data *alertmanager.Data, addFingerpr
 		if err != nil {
 			return nil, errors.Wrapf(err, "render field %s", key)
 		}
-		path := fmt.Sprintf("/fields/%s", key)
+
+		var fieldPath string
+		if path := ParseAzureWorkItemField(key); path != nil {
+			// Field has a constant defined, use its FieldPath() method
+			fieldPath = path.FieldPath()
+		} else {
+			// Custom field without constant, create path manually
+			fieldPath = fmt.Sprintf("/fields/%s", key)
+		}
+
 		document = append(document, webapi.JsonPatchOperation{
 			Op:    &webapi.OperationValues.Add,
-			Path:  &path,
+			Path:  stringPtr(fieldPath),
 			Value: fieldValue,
 		})
 	}
 
 	return document, nil
+}
+
+// Helper function to create string pointers
+func stringPtr(s string) *string {
+	return &s
 }

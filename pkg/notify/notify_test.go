@@ -427,6 +427,305 @@ func TestReceiver_GenerateWorkItemDocument(t *testing.T) {
 	require.Equal(t, "critical", customField)
 }
 
+func TestReceiver_GenerateWorkItemDocument_WithFieldConstants(t *testing.T) {
+	logger := log.NewLogfmtLogger(os.Stderr)
+	tmpl := template.SimpleTemplate()
+
+	// Create a config that uses both standard and custom fields
+	config := &config.ReceiverConfig{
+		Project:     "TestProject",
+		IssueType:   "Bug",
+		Summary:     `[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}`,
+		Description: `Alert: {{ .GroupLabels.alertname }}\nSeverity: {{ .CommonLabels.severity }}`,
+		Priority:    "1", // Set priority at the config level, not in Fields
+		Fields: map[string]interface{}{
+			"System.Reason":            "{{ .GroupLabels.reason }}",
+			"Microsoft.VSTS.TCM.Steps": "Investigation steps here",
+			"Custom.Environment":       "{{ .CommonLabels.environment }}",
+			"Custom.Unknown.Field":     "should be handled gracefully", // This won't have a constant
+		},
+	}
+
+	receiver := &Receiver{
+		logger: logger,
+		conf:   config,
+		tmpl:   tmpl,
+	}
+
+	data := &alertmanager.Data{
+		Alerts: alertmanager.Alerts{
+			alertmanager.Alert{
+				Status:      alertmanager.AlertFiring,
+				Fingerprint: "enhanced-test-fingerprint",
+			},
+		},
+		Status: alertmanager.AlertFiring,
+		GroupLabels: alertmanager.KV{
+			"alertname": "DatabaseConnectivity",
+			"reason":    "Connection timeout",
+		},
+		CommonLabels: alertmanager.KV{
+			"severity":    "warning",
+			"environment": "production",
+		},
+	}
+
+	document, err := receiver.generateWorkItemDocument(data, true)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, document)
+
+	// Collect all operation paths and values
+	operationPaths := make(map[string]interface{})
+	for _, op := range document {
+		if op.Path != nil {
+			operationPaths[*op.Path] = op.Value
+		}
+	}
+
+	// Verify standard field constants are working
+	require.Contains(t, operationPaths, WorkItemFieldTitle.FieldPath())
+	require.Contains(t, operationPaths, WorkItemFieldDescription.FieldPath())
+	require.Contains(t, operationPaths, WorkItemFieldPriority.FieldPath())
+	require.Contains(t, operationPaths, WorkItemFieldReason.FieldPath())
+	require.Contains(t, operationPaths, WorkItemFieldTags.FieldPath())
+
+	// Verify Microsoft VSTS field constants
+	require.Contains(t, operationPaths, WorkItemFieldSteps.FieldPath())
+
+	// Verify custom fields (both known and unknown)
+	require.Contains(t, operationPaths, "/fields/Custom.Environment")
+	require.Contains(t, operationPaths, "/fields/Custom.Unknown.Field")
+
+	// Verify field values are correctly templated
+	title := operationPaths[WorkItemFieldTitle.FieldPath()].(string)
+	require.Equal(t, "[FIRING] DatabaseConnectivity", title)
+
+	description := operationPaths[WorkItemFieldDescription.FieldPath()].(string)
+	require.Contains(t, description, "DatabaseConnectivity")
+	require.Contains(t, description, "warning")
+
+	priority := operationPaths[WorkItemFieldPriority.FieldPath()].(string)
+	require.Equal(t, "1", priority)
+
+	reason := operationPaths[WorkItemFieldReason.FieldPath()].(string)
+	require.Equal(t, "Connection timeout", reason)
+
+	tcmSteps := operationPaths[WorkItemFieldSteps.FieldPath()].(string)
+	require.Equal(t, "Investigation steps here", tcmSteps)
+
+	environment := operationPaths["/fields/Custom.Environment"].(string)
+	require.Equal(t, "production", environment)
+
+	unknownField := operationPaths["/fields/Custom.Unknown.Field"].(string)
+	require.Equal(t, "should be handled gracefully", unknownField)
+
+	// Verify fingerprint is properly added to tags
+	tags := operationPaths[WorkItemFieldTags.FieldPath()].(string)
+	require.Contains(t, tags, "Fingerprint:enhanced-test-fingerprint")
+}
+
+func TestReceiver_GenerateWorkItemDocument_FieldConstantValidation(t *testing.T) {
+	logger := log.NewLogfmtLogger(os.Stderr)
+	tmpl := template.SimpleTemplate()
+
+	// Test all major field groups to ensure constants work correctly
+	config := &config.ReceiverConfig{
+		Project:     "TestProject",
+		IssueType:   "Task",
+		Summary:     `Test Summary`,
+		Description: `Test Description`,
+		Fields: map[string]interface{}{
+			// System fields
+			"System.State":           "New",
+			"System.AssignedTo":      "test@example.com",
+			"System.AreaPath":        "TestProject\\Area1",
+			"System.IterationPath":   "TestProject\\Sprint1",
+			"System.BoardColumn":     "To Do",
+			"System.BoardColumnDone": "False",
+
+			// Microsoft VSTS Common fields
+			"Microsoft.VSTS.Common.Priority":      "2",
+			"Microsoft.VSTS.Common.Severity":      "3 - Medium",
+			"Microsoft.VSTS.Common.ValueArea":     "Business",
+			"Microsoft.VSTS.Common.Risk":          "Low",
+			"Microsoft.VSTS.Common.BusinessValue": "100",
+
+			// Microsoft VSTS Scheduling fields
+			"Microsoft.VSTS.Scheduling.Effort":           "5",
+			"Microsoft.VSTS.Scheduling.OriginalEstimate": "8",
+			"Microsoft.VSTS.Scheduling.RemainingWork":    "6",
+			"Microsoft.VSTS.Scheduling.CompletedWork":    "2",
+		},
+	}
+
+	receiver := &Receiver{
+		logger: logger,
+		conf:   config,
+		tmpl:   tmpl,
+	}
+
+	data := &alertmanager.Data{
+		Status: alertmanager.AlertFiring,
+		Alerts: alertmanager.Alerts{
+			alertmanager.Alert{
+				Status:      alertmanager.AlertFiring,
+				Fingerprint: "validation-test",
+			},
+		},
+	}
+
+	document, err := receiver.generateWorkItemDocument(data, false)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, document)
+
+	// Collect operation paths
+	operationPaths := make(map[string]interface{})
+	for _, op := range document {
+		if op.Path != nil {
+			operationPaths[*op.Path] = op.Value
+		}
+	}
+
+	// Test System field constants
+	expectedSystemFields := []AzureWorkItemField{
+		WorkItemFieldState, WorkItemFieldAssignedTo, WorkItemFieldAreaPath, WorkItemFieldIterationPath,
+		WorkItemFieldBoardColumn, WorkItemFieldBoardColumnDone,
+	}
+
+	for _, field := range expectedSystemFields {
+		require.Contains(t, operationPaths, field.FieldPath(), "Field %s should be present", field)
+	}
+
+	// Test Microsoft VSTS Common field constants
+	expectedVSTSCommonFields := []AzureWorkItemField{
+		WorkItemFieldPriority, WorkItemFieldSeverity,
+		WorkItemFieldValueArea, WorkItemFieldRisk,
+		WorkItemFieldBusinessValue,
+	}
+
+	for _, field := range expectedVSTSCommonFields {
+		require.Contains(t, operationPaths, field.FieldPath(), "Field %s should be present", field)
+	}
+
+	// Test Microsoft VSTS Scheduling field constants
+	expectedVSTSSchedulingFields := []AzureWorkItemField{
+		WorkItemFieldEffort, WorkItemFieldOriginalEstimate,
+		WorkItemFieldRemainingWork, WorkItemFieldCompletedWork,
+	}
+
+	for _, field := range expectedVSTSSchedulingFields {
+		require.Contains(t, operationPaths, field.FieldPath(), "Field %s should be present", field)
+	}
+
+	// Verify specific field values
+	require.Equal(t, "New", operationPaths[WorkItemFieldState.FieldPath()])
+	require.Equal(t, "2", operationPaths[WorkItemFieldPriority.FieldPath()])
+	require.Equal(t, "5", operationPaths[WorkItemFieldEffort.FieldPath()])
+}
+
+func TestReceiver_GenerateWorkItemDocument_ParseAzureWorkItemFieldIntegration(t *testing.T) {
+	logger := log.NewLogfmtLogger(os.Stderr)
+	tmpl := template.SimpleTemplate()
+
+	// Test with a mix of fields that have constants and fields that don't
+	config := &config.ReceiverConfig{
+		Project:     "TestProject",
+		IssueType:   "Epic",
+		Summary:     `Integration Test`,
+		Description: `Testing ParseAzureWorkItemField integration`,
+		Fields: map[string]interface{}{
+			// Fields with constants (but not Title/Description which are set by Summary/Description)
+			"Microsoft.VSTS.Common.Priority": "1",
+
+			// Custom fields without constants
+			"Custom.ApplicationName":       "TestApp",
+			"Custom.DeploymentEnvironment": "{{ .CommonLabels.env }}",
+			"Some.Random.Field":            "random value",
+			"":                             "empty field name", // Edge case
+		},
+	}
+
+	receiver := &Receiver{
+		logger: logger,
+		conf:   config,
+		tmpl:   tmpl,
+	}
+
+	data := &alertmanager.Data{
+		Status: alertmanager.AlertFiring,
+		CommonLabels: alertmanager.KV{
+			"env": "staging",
+		},
+		Alerts: alertmanager.Alerts{
+			alertmanager.Alert{
+				Status:      alertmanager.AlertFiring,
+				Fingerprint: "parse-integration-test",
+			},
+		},
+	}
+
+	document, err := receiver.generateWorkItemDocument(data, true)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, document)
+
+	// Verify that fields with constants use the FieldPath() method correctly
+	hasSystemTitle := false
+	hasSystemDescription := false
+	hasPriority := false
+	hasCustomApp := false
+	hasCustomEnv := false
+	hasRandomField := false
+	hasEmptyField := false
+	hasTags := false
+
+	for _, op := range document {
+		if op.Path == nil {
+			continue
+		}
+
+		switch *op.Path {
+		case WorkItemFieldTitle.FieldPath():
+			hasSystemTitle = true
+			require.Equal(t, "Integration Test", op.Value)
+		case WorkItemFieldDescription.FieldPath():
+			hasSystemDescription = true
+			require.Equal(t, "Testing ParseAzureWorkItemField integration", op.Value)
+		case WorkItemFieldPriority.FieldPath():
+			hasPriority = true
+			require.Equal(t, "1", op.Value)
+		case "/fields/Custom.ApplicationName":
+			hasCustomApp = true
+			require.Equal(t, "TestApp", op.Value)
+		case "/fields/Custom.DeploymentEnvironment":
+			hasCustomEnv = true
+			require.Equal(t, "staging", op.Value)
+		case "/fields/Some.Random.Field":
+			hasRandomField = true
+			require.Equal(t, "random value", op.Value)
+		case "/fields/":
+			hasEmptyField = true
+			require.Equal(t, "empty field name", op.Value)
+		case WorkItemFieldTags.FieldPath():
+			hasTags = true
+			tags := op.Value.(string)
+			require.Contains(t, tags, "Fingerprint:parse-integration-test")
+		}
+	}
+
+	// Verify all expected operations were found
+	require.True(t, hasSystemTitle, "System.Title operation should be present")
+	require.True(t, hasSystemDescription, "System.Description operation should be present")
+	require.True(t, hasPriority, "Microsoft.VSTS.Common.Priority operation should be present")
+	require.True(t, hasCustomApp, "Custom.ApplicationName operation should be present")
+	require.True(t, hasCustomEnv, "Custom.DeploymentEnvironment operation should be present")
+	require.True(t, hasRandomField, "Some.Random.Field operation should be present")
+	require.True(t, hasEmptyField, "Empty field operation should be present")
+	require.True(t, hasTags, "System.Tags operation should be present")
+}
+
 func TestReceiver_GenerateWorkItemDocument_NoFingerprint(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stderr)
 	tmpl := template.SimpleTemplate()

@@ -202,6 +202,10 @@ func (r *Receiver) generateWorkItemDocument(data *alertmanager.Data, addFingerpr
 	if err != nil {
 		return nil, errors.Wrap(err, "render title")
 	}
+	if len(title) > 128 {
+		title = title[:128]
+		level.Warn(r.logger).Log("msg", "title truncated to 128 characters")
+	}
 
 	document = append(document, webapi.JsonPatchOperation{
 		Op:    &webapi.OperationValues.Add,

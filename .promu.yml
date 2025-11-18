@@ -7,6 +7,9 @@ build:
   - name: alert-az-do
     path: cmd/alert-az-do 
   flags: -a -tags netgo
+  ldflags: |
+    -s
+    -X main.Version=$(VERSION)
 crossbuild:
   platforms:
   - linux/amd64

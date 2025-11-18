@@ -205,6 +205,7 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 		-f $(DOCKERFILE_PATH) \
 		--build-arg ARCH="$*" \
 		--build-arg OS="linux" \
+		--build-arg VERSION="$(VERSION)" \
 		$(DOCKERBUILD_CONTEXT)
 
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)

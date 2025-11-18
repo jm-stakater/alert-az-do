@@ -187,12 +187,16 @@ func TestReceiver_Notify_ResolveWorkItem(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stderr)
 	mockClient := newMockWorkItemTrackingClient()
 	tmpl := template.SimpleTemplate()
-	config := testReceiverConfig1()
+	cfg := testReceiverConfig1()
+	// Add AutoResolve configuration so resolveWorkItem is called
+	cfg.AutoResolve = &config.AutoResolve{
+		State: "Closed",
+	}
 
 	receiver := &Receiver{
 		logger: logger,
 		client: mockClient,
-		conf:   config,
+		conf:   cfg,
 		tmpl:   tmpl,
 	}
 

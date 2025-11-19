@@ -21,28 +21,6 @@ jobs:
       run: make
       env:
         GOBIN: "/tmp/bin"
-    - name: Archive code coverage results
-      uses: actions/upload-artifact@v5
-      with:
-        name: code-coverage
-        path: cover.out
-  code_coverage:
-    name: "Code coverage report"
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    needs: unit_tests
-    permissions:
-      contents:      read
-      actions:       read
-      pull-requests: write
-    steps:
-    - name: download artifact (cover.out)
-      id: download-cover-out
-      uses: dawidd6/action-download-artifact@v11
-      with:
-        workflow_conclusion: success
-        name: code-coverage
-        if_no_artifact_found: error
     - name: download artifact (master.breakdown)
       id: download-master-breakdown
       uses: dawidd6/action-download-artifact@v11

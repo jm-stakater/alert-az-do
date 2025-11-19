@@ -21,6 +21,7 @@ jobs:
       run: make
       env:
         GOBIN: "/tmp/bin"
+
     - name: download artifact (master.breakdown)
       id: download-master-breakdown
       uses: dawidd6/action-download-artifact@v11
@@ -29,6 +30,7 @@ jobs:
         workflow_conclusion: success
         name: master.breakdown
         if_no_artifact_found: warn
+
     - uses: vladopajic/go-test-coverage@v2.18.0
       id: coverage
       continue-on-error: true # Should fail after coverage comment is posted
@@ -38,8 +40,16 @@ jobs:
         breakdown-file-name: ${{ github.ref_name == 'master' && 'master.breakdown' || '' }}
         diff-base-breakdown-file-name: ${{ steps.download-master-breakdown.outputs.found_artifact == 'true' && 'master.breakdown' || '' }}
 
+    - uses: 8BitJonny/gh-get-current-pr@4.0.0
+      id: PR
+      with:
+        github-token: ${{ github.token }}
+        filterOutClosed: true
+        filterOutDraft: true
+
     - name: post coverage report
       uses: thollander/actions-comment-pull-request@v3
+      if: steps.PR.outputs.pr_found == 'true'
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         comment-tag: coverage-report
@@ -53,6 +63,7 @@ jobs:
       if: steps.coverage.outcome == 'failure'
       shell: bash
       run: echo "coverage check failed" && exit 1
+
     - name: upload artifact (master.breakdown)
       uses: actions/upload-artifact@v5
       if: github.ref_name == 'master'

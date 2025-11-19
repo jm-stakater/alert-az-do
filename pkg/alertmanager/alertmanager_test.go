@@ -413,3 +413,94 @@ func TestConstants(t *testing.T) {
 	require.Equal(t, "firing", AlertFiring)
 	require.Equal(t, "resolved", AlertResolved)
 }
+
+func TestAlerts_Fingerprints(t *testing.T) {
+	alerts := Alerts{
+		{Fingerprint: "abc123", Status: AlertFiring},
+		{Fingerprint: "def456", Status: AlertResolved},
+		{Fingerprint: "ghi789", Status: AlertFiring},
+	}
+
+	expected := []string{
+		"Fingerprint:abc123",
+		"Fingerprint:def456",
+		"Fingerprint:ghi789",
+	}
+
+	result := alerts.Fingerprints()
+	require.Equal(t, expected, result)
+}
+
+func TestAlerts_FiringFingerprints(t *testing.T) {
+	alerts := Alerts{
+		{Fingerprint: "abc123", Status: AlertFiring},
+		{Fingerprint: "def456", Status: AlertResolved},
+		{Fingerprint: "ghi789", Status: AlertFiring},
+	}
+
+	expected := []string{
+		"Fingerprint:abc123",
+		"Fingerprint:ghi789",
+	}
+
+	result := alerts.FiringFingerprints()
+	require.Equal(t, expected, result)
+}
+
+func TestAlerts_ResolvedFingerprints(t *testing.T) {
+	alerts := Alerts{
+		{Fingerprint: "abc123", Status: AlertFiring},
+		{Fingerprint: "def456", Status: AlertResolved},
+		{Fingerprint: "ghi789", Status: AlertFiring},
+		{Fingerprint: "jkl012", Status: AlertResolved},
+	}
+
+	expected := []string{
+		"Fingerprint:def456",
+		"Fingerprint:jkl012",
+	}
+
+	result := alerts.ResolvedFingerprints()
+	require.Equal(t, expected, result)
+}
+
+func TestAlerts_FingerprintsEmptyAlerts(t *testing.T) {
+	var alerts Alerts
+
+	result := alerts.Fingerprints()
+	require.Empty(t, result)
+
+	result = alerts.FiringFingerprints()
+	require.Empty(t, result)
+
+	result = alerts.ResolvedFingerprints()
+	require.Empty(t, result)
+}
+
+func TestAlerts_FingerprintsOnlyFiring(t *testing.T) {
+	alerts := Alerts{
+		{Fingerprint: "abc123", Status: AlertFiring},
+		{Fingerprint: "ghi789", Status: AlertFiring},
+	}
+
+	allFingerprints := alerts.Fingerprints()
+	firingFingerprints := alerts.FiringFingerprints()
+	resolvedFingerprints := alerts.ResolvedFingerprints()
+
+	require.Equal(t, allFingerprints, firingFingerprints)
+	require.Empty(t, resolvedFingerprints)
+}
+
+func TestAlerts_FingerprintsOnlyResolved(t *testing.T) {
+	alerts := Alerts{
+		{Fingerprint: "def456", Status: AlertResolved},
+		{Fingerprint: "jkl012", Status: AlertResolved},
+	}
+
+	allFingerprints := alerts.Fingerprints()
+	firingFingerprints := alerts.FiringFingerprints()
+	resolvedFingerprints := alerts.ResolvedFingerprints()
+
+	require.Equal(t, allFingerprints, resolvedFingerprints)
+	require.Empty(t, firingFingerprints)
+}

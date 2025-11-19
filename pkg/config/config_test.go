@@ -799,3 +799,433 @@ template: alert-az-do.tmpl
 	receiver := cfg.Receivers[0]
 	require.Equal(t, Secret("substituted-pat-token"), receiver.PersonalAccessToken)
 }
+
+// Test checkOverflow function
+func TestCheckOverflow(t *testing.T) {
+	tests := []struct {
+		name      string
+		overflow  map[string]interface{}
+		ctx       string
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			name:      "no overflow",
+			overflow:  map[string]interface{}{},
+			ctx:       "config",
+			expectErr: false,
+		},
+		{
+			name:      "nil overflow",
+			overflow:  nil,
+			ctx:       "config",
+			expectErr: false,
+		},
+		{
+			name: "single unknown field",
+			overflow: map[string]interface{}{
+				"unknown_field": "value",
+			},
+			ctx:       "receiver",
+			expectErr: true,
+			errMsg:    "unknown fields in receiver: unknown_field",
+		},
+		{
+			name: "multiple unknown fields",
+			overflow: map[string]interface{}{
+				"field1": "value1",
+				"field2": "value2",
+				"field3": "value3",
+			},
+			ctx:       "config",
+			expectErr: true,
+			errMsg:    "unknown fields in config:",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkOverflow(tt.overflow, tt.ctx)
+			if tt.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errMsg)
+				if len(tt.overflow) > 1 {
+					// Check that all field names are included in error
+					for field := range tt.overflow {
+						require.Contains(t, err.Error(), field)
+					}
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// Test ReceiverByName function
+func TestConfig_ReceiverByName(t *testing.T) {
+	cfg := &Config{
+		Receivers: []*ReceiverConfig{
+			{Name: "receiver1", Project: "project1"},
+			{Name: "receiver2", Project: "project2"},
+			{Name: "receiver3", Project: "project3"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		receiverName string
+		expected     *ReceiverConfig
+	}{
+		{
+			name:         "found first receiver",
+			receiverName: "receiver1",
+			expected:     &ReceiverConfig{Name: "receiver1", Project: "project1"},
+		},
+		{
+			name:         "found middle receiver",
+			receiverName: "receiver2",
+			expected:     &ReceiverConfig{Name: "receiver2", Project: "project2"},
+		},
+		{
+			name:         "found last receiver",
+			receiverName: "receiver3",
+			expected:     &ReceiverConfig{Name: "receiver3", Project: "project3"},
+		},
+		{
+			name:         "not found",
+			receiverName: "nonexistent",
+			expected:     nil,
+		},
+		{
+			name:         "empty name",
+			receiverName: "",
+			expected:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cfg.ReceiverByName(tt.receiverName)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test Config.String function
+func TestConfig_String(t *testing.T) {
+	fiveMinutes, _ := time.ParseDuration("5m")
+	cfg := &Config{
+		Defaults: &ReceiverConfig{
+			Name:                "test-default",
+			Organization:        "test-org",
+			Project:             "test-project",
+			IssueType:           "Bug",
+			PersonalAccessToken: "test-pat", // Add authentication
+			Summary:             "Test Summary",
+			ReopenState:         "Active",
+			ReopenDuration:      &fiveMinutes,
+		},
+		Receivers: []*ReceiverConfig{
+			{
+				Name:      "receiver1",
+				Project:   "project1",
+				IssueType: "Task",
+				// Inherits PAT from defaults
+			},
+		},
+		Template: "test.tmpl",
+	}
+
+	result := cfg.String()
+	
+	// Verify it's valid YAML by unmarshaling it back
+	var unmarshaled Config
+	err := yaml.Unmarshal([]byte(result), &unmarshaled)
+	require.NoError(t, err)
+	
+	// Verify key fields are preserved
+	require.Equal(t, cfg.Template, unmarshaled.Template)
+	require.Equal(t, cfg.Defaults.Name, unmarshaled.Defaults.Name)
+	require.Equal(t, cfg.Defaults.Organization, unmarshaled.Defaults.Organization)
+	require.Len(t, unmarshaled.Receivers, 1)
+	require.Equal(t, cfg.Receivers[0].Name, unmarshaled.Receivers[0].Name)
+}
+
+// Test Config.String with marshal error (hard to trigger, but test the error path)
+func TestConfig_String_WithError(t *testing.T) {
+	// Create a config with a field that can't be marshaled
+	cfg := Config{
+		XXX: map[string]interface{}{
+			"invalid": make(chan int), // channels can't be marshaled to YAML
+		},
+	}
+
+	result := cfg.String()
+	require.Contains(t, result, "<error creating config string:")
+}
+
+// Test UnmarshalYAML with Managed Identity inheritance
+func TestConfig_UnmarshalYAML_ManagedIdentityInheritance(t *testing.T) {
+	configYAML := `
+defaults:
+  organization: test-org
+  client_id: default-client-id
+  subscription_id: default-subscription-id
+  project: test-project
+  issue_type: Bug
+  summary: Test Summary
+  reopen_state: Active
+  reopen_duration: 5m
+
+receivers:
+  - name: receiver-inherit-all
+  - name: receiver-partial-override
+    client_id: override-client-id
+  - name: receiver-full-override
+    client_id: full-client-id
+    subscription_id: full-subscription-id
+
+template: test.tmpl
+`
+
+	var cfg Config
+	err := yaml.Unmarshal([]byte(configYAML), &cfg)
+	require.NoError(t, err)
+
+	// Test full inheritance
+	receiver1 := cfg.ReceiverByName("receiver-inherit-all")
+	require.NotNil(t, receiver1)
+	require.Equal(t, "default-client-id", receiver1.ClientID)
+	require.Equal(t, "default-subscription-id", receiver1.SubscriptionID)
+
+	// Test partial inheritance
+	receiver2 := cfg.ReceiverByName("receiver-partial-override")
+	require.NotNil(t, receiver2)
+	require.Equal(t, "override-client-id", receiver2.ClientID)
+	require.Equal(t, "default-subscription-id", receiver2.SubscriptionID)
+
+	// Test full override (no inheritance)
+	receiver3 := cfg.ReceiverByName("receiver-full-override")
+	require.NotNil(t, receiver3)
+	require.Equal(t, "full-client-id", receiver3.ClientID)
+	require.Equal(t, "full-subscription-id", receiver3.SubscriptionID)
+}
+
+// Test UnmarshalYAML with AutoResolve functionality
+func TestConfig_UnmarshalYAML_AutoResolve(t *testing.T) {
+	tests := []struct {
+		name      string
+		configYAML string
+		expectErr bool
+		errMsg    string
+		checkFunc func(t *testing.T, cfg *Config)
+	}{
+		{
+			name: "valid auto_resolve in defaults",
+			configYAML: `
+defaults:
+  organization: test-org
+  personal_access_token: test-token
+  project: test-project
+  issue_type: Bug
+  summary: Test Summary
+  reopen_state: Active
+  reopen_duration: 5m
+  auto_resolve:
+    state: Closed
+
+receivers:
+  - name: test-receiver
+
+template: test.tmpl
+`,
+			expectErr: false,
+			checkFunc: func(t *testing.T, cfg *Config) {
+				require.NotNil(t, cfg.Defaults.AutoResolve)
+				require.Equal(t, "Closed", cfg.Defaults.AutoResolve.State)
+				
+				// Receiver should inherit AutoResolve
+				receiver := cfg.ReceiverByName("test-receiver")
+				require.NotNil(t, receiver.AutoResolve)
+				require.Equal(t, "Closed", receiver.AutoResolve.State)
+			},
+		},
+		{
+			name: "invalid auto_resolve in defaults - empty state",
+			configYAML: `
+defaults:
+  organization: test-org
+  personal_access_token: test-token
+  project: test-project
+  issue_type: Bug
+  summary: Test Summary
+  reopen_state: Active
+  reopen_duration: 5m
+  auto_resolve:
+    state: ""
+
+receivers:
+  - name: test-receiver
+
+template: test.tmpl
+`,
+			expectErr: true,
+			errMsg:    "bad config in defaults section: state cannot be empty",
+		},
+		{
+			name: "auto_resolve in receiver with valid state",
+			configYAML: `
+defaults:
+  organization: test-org
+  personal_access_token: test-token
+  project: test-project
+  issue_type: Bug
+  summary: Test Summary
+  reopen_state: Active
+  reopen_duration: 5m
+
+receivers:
+  - name: test-receiver
+    auto_resolve:
+      state: Done
+
+template: test.tmpl
+`,
+			expectErr: false,
+			checkFunc: func(t *testing.T, cfg *Config) {
+				receiver := cfg.ReceiverByName("test-receiver")
+				require.NotNil(t, receiver.AutoResolve)
+				require.Equal(t, "Done", receiver.AutoResolve.State)
+			},
+		},
+		{
+			name: "invalid auto_resolve in receiver - empty state",
+			configYAML: `
+defaults:
+  organization: test-org
+  personal_access_token: test-token
+  project: test-project
+  issue_type: Bug
+  summary: Test Summary
+  reopen_state: Active
+  reopen_duration: 5m
+
+receivers:
+  - name: test-receiver
+    auto_resolve:
+      state: ""
+
+template: test.tmpl
+`,
+			expectErr: true,
+			errMsg:    "bad config in receiver \"test-receiver\", 'auto_resolve' was defined with empty 'state' field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+			err := yaml.Unmarshal([]byte(tt.configYAML), &cfg)
+			
+			if tt.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+				if tt.checkFunc != nil {
+					tt.checkFunc(t, &cfg)
+				}
+			}
+		})
+	}
+}
+
+// Test UnmarshalYAML with Fields inheritance
+func TestConfig_UnmarshalYAML_FieldsInheritance(t *testing.T) {
+	configYAML := `
+defaults:
+  organization: test-org
+  personal_access_token: test-token
+  project: test-project
+  issue_type: Bug
+  summary: Test Summary
+  reopen_state: Active
+  reopen_duration: 5m
+  fields:
+    System.AreaPath: '\default\area'
+    System.Priority: High
+    Custom.DefaultField: default-value
+
+receivers:
+  - name: receiver-inherit-all
+  - name: receiver-with-own-fields
+    fields:
+      System.Priority: Critical
+      Custom.ReceiverField: receiver-value
+  - name: receiver-no-fields
+
+template: test.tmpl
+`
+
+	var cfg Config
+	err := yaml.Unmarshal([]byte(configYAML), &cfg)
+	require.NoError(t, err)
+
+	// Test full inheritance
+	receiver1 := cfg.ReceiverByName("receiver-inherit-all")
+	require.NotNil(t, receiver1)
+	require.NotNil(t, receiver1.Fields)
+	require.Equal(t, "\\default\\area", receiver1.Fields["System.AreaPath"])
+	require.Equal(t, "High", receiver1.Fields["System.Priority"])
+	require.Equal(t, "default-value", receiver1.Fields["Custom.DefaultField"])
+
+	// Test merge behavior - receiver fields take precedence
+	receiver2 := cfg.ReceiverByName("receiver-with-own-fields")
+	require.NotNil(t, receiver2)
+	require.NotNil(t, receiver2.Fields)
+	// Should inherit from defaults but receiver fields take precedence
+	require.Equal(t, "\\default\\area", receiver2.Fields["System.AreaPath"]) // inherited
+	require.Equal(t, "Critical", receiver2.Fields["System.Priority"])        // overridden
+	require.Equal(t, "default-value", receiver2.Fields["Custom.DefaultField"]) // inherited
+	require.Equal(t, "receiver-value", receiver2.Fields["Custom.ReceiverField"]) // receiver-specific
+
+	// Test receiver with no fields (should still get defaults)
+	receiver3 := cfg.ReceiverByName("receiver-no-fields")
+	require.NotNil(t, receiver3)
+	require.NotNil(t, receiver3.Fields)
+	require.Equal(t, "\\default\\area", receiver3.Fields["System.AreaPath"])
+	require.Equal(t, "High", receiver3.Fields["System.Priority"])
+	require.Equal(t, "default-value", receiver3.Fields["Custom.DefaultField"])
+}
+
+// Test UnmarshalYAML when defaults is nil (should initialize it)
+func TestConfig_UnmarshalYAML_NilDefaults(t *testing.T) {
+	configYAML := `
+# No defaults section
+receivers:
+  - name: test-receiver
+    organization: test-org
+    personal_access_token: test-token
+    project: test-project
+    issue_type: Bug
+    summary: Test Summary
+    reopen_state: Active
+    reopen_duration: 5m
+
+template: test.tmpl
+`
+
+	var cfg Config
+	err := yaml.Unmarshal([]byte(configYAML), &cfg)
+	require.NoError(t, err)
+
+	// Verify that defaults was initialized and doesn't cause panics
+	require.NotNil(t, cfg.Defaults)
+	
+	// Verify receiver has its own values
+	receiver := cfg.ReceiverByName("test-receiver")
+	require.NotNil(t, receiver)
+	require.Equal(t, "test-org", receiver.Organization)
+	require.Equal(t, Secret("test-token"), receiver.PersonalAccessToken)
+}

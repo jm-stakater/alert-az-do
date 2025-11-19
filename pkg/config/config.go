@@ -185,11 +185,22 @@ type Config struct {
 }
 
 func (c Config) String() string {
-	b, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Sprintf("<error creating config string: %s>", err)
-	}
-	return string(b)
+	var result string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				result = fmt.Sprintf("<error creating config string: %v>", r)
+			}
+		}()
+
+		b, err := yaml.Marshal(c)
+		if err != nil {
+			result = fmt.Sprintf("<error creating config string: %s>", err)
+			return
+		}
+		result = string(b)
+	}()
+	return result
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -203,6 +214,12 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain Config
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
+	}
+
+	// Initialize defaults if it's nil to prevent panics
+	if c.Defaults == nil {
+		//return fmt.Errorf("bad config: missing the defaults section")
+		c.Defaults = &ReceiverConfig{}
 	}
 
 	// Check for mutually exclusive authentication methods in defaults

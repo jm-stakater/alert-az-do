@@ -138,6 +138,11 @@ common-test: $(GOTEST_DIR)
 	@echo ">> running all tests"
 	$(GOTEST) $(test-flags) $(GOOPTS) $(pkgs)
 
+.PHONY: common-coverage
+common-coverage: $(GOTEST_DIR)
+	@echo ">> running all tests with coverage"
+	$(GOTEST) $(test-flags) $(GOOPTS) -cover -coverprofile=coverage.txt $(pkgs)
+
 $(GOTEST_DIR):
 	@mkdir -p $@
 

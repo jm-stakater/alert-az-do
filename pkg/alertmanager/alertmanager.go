@@ -18,6 +18,7 @@
 package alertmanager
 
 import (
+	"fmt"
 	"sort"
 	"time"
 )
@@ -145,6 +146,15 @@ type Alert struct {
 // Alerts is a list of Alert objects.
 type Alerts []Alert
 
+// Fingerprints returns the fingerprints of alerts that are firing.
+func (as Alerts) Fingerprints() []string {
+	var fingerprints []string
+	for _, a := range as {
+		fingerprints = append(fingerprints, fmt.Sprintf("Fingerprint:%s", a.Fingerprint))
+	}
+	return fingerprints
+}
+
 // Firing returns the subset of alerts that are firing.
 func (as Alerts) Firing() []Alert {
 	var res []Alert
@@ -154,4 +164,33 @@ func (as Alerts) Firing() []Alert {
 		}
 	}
 	return res
+}
+
+// Resolved returns the subset of alerts that are resolved.
+func (as Alerts) Resolved() []Alert {
+	var res []Alert
+	for _, a := range as {
+		if a.Status == AlertResolved {
+			res = append(res, a)
+		}
+	}
+	return res
+}
+
+// FiringFingerprints returns the fingerprints of alerts that are firing.
+func (as Alerts) FiringFingerprints() []string {
+	var fingerprints []string
+	for _, a := range as.Firing() {
+		fingerprints = append(fingerprints, fmt.Sprintf("Fingerprint:%s", a.Fingerprint))
+	}
+	return fingerprints
+}
+
+// ResolvedFingerprints returns the fingerprints of alerts that are resolved.
+func (as Alerts) ResolvedFingerprints() []string {
+	var fingerprints []string
+	for _, a := range as.Resolved() {
+		fingerprints = append(fingerprints, fmt.Sprintf("Fingerprint:%s", a.Fingerprint))
+	}
+	return fingerprints
 }

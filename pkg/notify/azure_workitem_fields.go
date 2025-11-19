@@ -33,7 +33,7 @@ func (f AzureWorkItemField) FieldPath() string {
 
 // MarshalJSON implements json.Marshaler interface, returning the field reference name
 func (f AzureWorkItemField) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%s"`, string(f))), nil
+	return fmt.Appendf(nil, `"%s"`, string(f)), nil
 }
 
 const (

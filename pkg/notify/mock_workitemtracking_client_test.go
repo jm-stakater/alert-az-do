@@ -25,12 +25,18 @@ import (
 
 // mockWorkItemTrackingClient implements the full workitemtracking.Client interface for testing
 type mockWorkItemTrackingClient struct {
-	workItems      map[int]*workitemtracking.WorkItem
-	nextID         int
-	workItemsByTag map[string][]*workitemtracking.WorkItem
-	createCalls    []mockCreateCall
-	updateCalls    []mockUpdateCall
-	queryCalls     []string
+	workItems       map[int]*workitemtracking.WorkItem
+	nextID          int
+	workItemsByTag  map[string][]*workitemtracking.WorkItem
+	createCalls     []mockCreateCall
+	updateCalls     []mockUpdateCall
+	queryCalls      []string
+	
+	// Error control flags for testing error paths
+	shouldFailCreate  bool
+	shouldFailUpdate  bool
+	shouldFailQuery   bool
+	duplicateResults  bool
 }
 
 type mockCreateCall struct {
@@ -46,6 +52,10 @@ func newMockWorkItemTrackingClient() *mockWorkItemTrackingClient {
 		workItems:      make(map[int]*workitemtracking.WorkItem),
 		workItemsByTag: make(map[string][]*workitemtracking.WorkItem),
 		nextID:         1,
+		shouldFailCreate: false,
+		shouldFailUpdate: false,
+		shouldFailQuery:  false,
+		duplicateResults: false,
 	}
 }
 
@@ -53,6 +63,11 @@ func newMockWorkItemTrackingClient() *mockWorkItemTrackingClient {
 
 func (m *mockWorkItemTrackingClient) CreateWorkItem(ctx context.Context, args workitemtracking.CreateWorkItemArgs) (*workitemtracking.WorkItem, error) {
 	m.createCalls = append(m.createCalls, mockCreateCall{args: args})
+
+	// Check if we should fail
+	if m.shouldFailCreate {
+		return nil, errors.New("mock create work item failed")
+	}
 
 	workItem := &workitemtracking.WorkItem{
 		Id:     &m.nextID,
@@ -95,6 +110,11 @@ func (m *mockWorkItemTrackingClient) CreateWorkItem(ctx context.Context, args wo
 func (m *mockWorkItemTrackingClient) UpdateWorkItem(ctx context.Context, args workitemtracking.UpdateWorkItemArgs) (*workitemtracking.WorkItem, error) {
 	m.updateCalls = append(m.updateCalls, mockUpdateCall{args: args})
 
+	// Check if we should fail
+	if m.shouldFailUpdate {
+		return nil, errors.New("mock update work item failed")
+	}
+
 	workItem, exists := m.workItems[*args.Id]
 	if !exists {
 		return nil, errors.Errorf("work item %d not found", *args.Id)
@@ -125,6 +145,11 @@ func (m *mockWorkItemTrackingClient) UpdateWorkItem(ctx context.Context, args wo
 func (m *mockWorkItemTrackingClient) QueryByWiql(ctx context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
 	m.queryCalls = append(m.queryCalls, *args.Wiql.Query)
 
+	// Check if we should fail
+	if m.shouldFailQuery {
+		return nil, errors.New("mock query failed")
+	}
+
 	// Simple mock: extract fingerprint from WIQL query
 	var workItems []workitemtracking.WorkItemReference
 
@@ -137,6 +162,12 @@ func (m *mockWorkItemTrackingClient) QueryByWiql(ctx context.Context, args worki
 				})
 			}
 		}
+	}
+
+	// Handle duplicate results scenario for testing
+	if m.duplicateResults && len(workItems) > 0 {
+		// Add a duplicate
+		workItems = append(workItems, workItems[0])
 	}
 
 	return &workitemtracking.WorkItemQueryResult{

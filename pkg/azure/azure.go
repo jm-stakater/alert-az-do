@@ -46,7 +46,7 @@ func NewBasicCredential(username, password string) (*BasicCredential, error) {
 }
 
 func (c *BasicCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	var t = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", c.Username, c.Password)))
+	var t = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%s:%s", c.Username, c.Password))
 	token := azcore.AccessToken{
 		Token: t,
 	}

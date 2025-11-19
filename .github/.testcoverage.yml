@@ -1,0 +1,11 @@
+profile: '' # set via github action
+threshold:
+  file: 70
+  package: 80
+  total: 90
+exclude:
+  paths:
+    - ^cmd/alert-az-do/content\.go
+    - ^cmd/alert-az-do/main\.go
+    - ^cmd/alert-az-do/telemetry\.go
+

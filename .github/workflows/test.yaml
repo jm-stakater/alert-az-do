@@ -25,7 +25,7 @@ jobs:
       uses: actions/upload-artifact@v5
       with:
         name: code-coverage
-        path: coverage.txt
+        path: cover.out
   code_coverage:
     name: "Code coverage report"
     if: github.event_name == 'pull_request'
@@ -36,7 +36,62 @@ jobs:
       actions:       read
       pull-requests: write
     steps:
-    - uses: fgrosse/go-coverage-report@v1.2.0
+    - name: download artifact (cover.out)
+      id: download-cover-out
+      uses: dawidd6/action-download-artifact@v11
       with:
-        coverage-artifact-name: "code-coverage"
-        coverage-file-name: "coverage.txt"
+        workflow_conclusion: success
+        name: code-coverage
+        if_no_artifact_found: error
+    - name: download artifact (master.breakdown)
+      id: download-master-breakdown
+      uses: dawidd6/action-download-artifact@v11
+      with:
+        branch: master
+        workflow_conclusion: success
+        name: master.breakdown
+        if_no_artifact_found: warn
+    - uses: vladopajic/go-test-coverage@v2
+      id: coverage
+      continue-on-error: true # Should fail after coverage comment is posted
+      with:
+        config: ./.github/.testcoverage.yml
+        profile: cover.out
+        breakdown-file-name: ${{ github.ref_name == 'master' && 'master.breakdown' || '' }}
+        diff-base-breakdown-file-name: ${{ steps.download-master-breakdown.outputs.found_artifact == 'true' && 'master.breakdown' || '' }}
+
+    # Post coverage report as comment (in 2 steps)
+    - name: find pull request ID
+      run: |
+          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${{ github.ref_name }}&state=open")
+          PR_ID=$(echo "$PR_DATA" | jq -r '.[0].number')
+          
+          if [ "$PR_ID" != "null" ]; then
+            echo "pull_request_id=$PR_ID" >> $GITHUB_ENV
+          else
+            echo "No open pull request found for this branch."
+          fi
+    - name: post coverage report
+      if: env.pull_request_id
+      uses: thollander/actions-comment-pull-request@v3
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        comment-tag: coverage-report
+        pr-number: ${{ env.pull_request_id }}
+        message: |
+          go-test-coverage report:
+          ```
+          ${{ fromJSON(steps.coverage.outputs.report) }}```
+
+    - name: "finally check coverage"
+      if: steps.coverage.outcome == 'failure'
+      shell: bash
+      run: echo "coverage check failed" && exit 1
+    - name: upload artifact (master.breakdown)
+      uses: actions/upload-artifact@v5
+      if: github.ref_name == 'master'
+      with:
+        name: master.breakdown
+        path: master.breakdown
+        if-no-files-found: error

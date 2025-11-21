@@ -543,15 +543,21 @@ func TestTemplateFuncs_Coverage(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
-		data     interface{}
+		data     any
 	}{
 		{"toUpper", `{{ "hello" | toUpper }}`, nil},
 		{"toLower", `{{ "HELLO" | toLower }}`, nil},
-		{"join", `{{ join "," (stringSlice "a" "b") }}`, nil},
+		{"contains", `{{ contains "world" "hello world" }}`, nil},
+		{"hasPrefix", `{{ hasPrefix "he" "hello" }}`, nil},
+		{"hasSuffix", `{{ hasSuffix "lo" "hello" }}`, nil},
+		{"title", `{{ title "hello world" }}`, nil},
+		{"join", `{{ join "," . }}`, []string{"a", "b"}},
 		{"match", `{{ match "test" "test" }}`, nil},
 		{"reReplaceAll", `{{ reReplaceAll "a" "b" "cat" }}`, nil},
 		{"stringSlice", `{{ stringSlice "one" "two" }}`, nil},
 		{"getEnv", `{{ getEnv "PATH" }}`, nil},
+		{"toJson", `{{ toJson . }}`, map[string]string{"key": "value"}},
+		{"toJsonPretty", `{{ toJsonPretty . }}`, map[string]string{"key": "value"}},
 	}
 
 	for _, tt := range tests {

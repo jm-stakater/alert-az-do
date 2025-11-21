@@ -27,6 +27,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type Template struct {
@@ -35,9 +36,12 @@ type Template struct {
 }
 
 var funcs = template.FuncMap{
-	"toUpper": strings.ToUpper,
-	"toLower": strings.ToLower,
-	"title":   cases.Title,
+	"toUpper":   strings.ToUpper,
+	"toLower":   strings.ToLower,
+	"contains":  strings.Contains,
+	"hasPrefix": strings.HasPrefix,
+	"hasSuffix": strings.HasSuffix,
+	"title":     cases.Title(language.English).String,
 	// join is equal to strings.Join but inverts the argument order
 	// for easier pipelining in templates.
 	"join": func(sep string, s []string) string {
@@ -54,8 +58,11 @@ var funcs = template.FuncMap{
 	"getEnv": func(name string) string {
 		return os.Getenv(name)
 	},
-	"marshal": func(v interface{}) html.JS {
-		//a, _ := json.Marshal(v)
+	"toJson": func(v any) html.JS {
+		a, _ := json.Marshal(v)
+		return html.JS(a)
+	},
+	"toJsonPretty": func(v any) html.JS {
 		a, _ := json.MarshalIndent(v, "", "  ")
 		return html.JS(a)
 	},

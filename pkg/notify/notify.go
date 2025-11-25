@@ -118,6 +118,13 @@ func (r *Receiver) updateWorkItem(ctx context.Context, data *alertmanager.Data, 
 	}
 
 	level.Info(r.logger).Log("msg", "work item updated", "id", workItem.Id, "title", (*workItem.Fields)[WorkItemFieldTitle.String()].(string))
+
+	if r.conf.UpdateInComment != nil && *r.conf.UpdateInComment {
+		if err := r.addComment(ctx, data, workItemRef); err != nil {
+			return errors.Wrap(err, "add comment to work item")
+		}
+	}
+
 	return nil
 }
 
@@ -180,7 +187,7 @@ func (r *Receiver) findWorkItem(ctx context.Context, data *alertmanager.Data, pr
 		return nil, nil
 	} else if len(*queryResult.WorkItems) > 1 {
 		level.Debug(r.logger).Log("msg", "duplicate fingerprint on work items found", "fingerprints", fingerprints)
-		return nil, nil
+		//return nil, nil
 	}
 
 	workItemRef := (*queryResult.WorkItems)[0]
@@ -303,6 +310,29 @@ func (r *Receiver) generateWorkItemDocument(data *alertmanager.Data, addFingerpr
 	}
 
 	return document, nil
+}
+
+func (r *Receiver) addComment(ctx context.Context, _ *alertmanager.Data, workItem *workitemtracking.WorkItem) error {
+	project := (*workItem.Fields)[WorkItemFieldTeamProject.String()].(string)
+
+	comment := "Issue updated with new alert data"
+
+	payload := workitemtracking.AddWorkItemCommentArgs{
+		Request: &workitemtracking.CommentCreate{
+			Text: &comment,
+		},
+		Project:    stringPtr(project),
+		WorkItemId: workItem.Id,
+		Format:     &workitemtracking.CommentFormatValues.Markdown,
+	}
+
+	workItemComment, err := r.client.AddWorkItemComment(ctx, payload)
+	if err != nil {
+		return errors.Wrap(err, "create work item comment")
+	}
+
+	level.Info(r.logger).Log("msg", "work item comment created", "id", workItemComment.Id, "workItemId", workItem.Id)
+	return nil
 }
 
 // Helper function to create string pointers

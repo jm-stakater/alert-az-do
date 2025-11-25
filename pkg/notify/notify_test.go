@@ -1681,6 +1681,68 @@ func TestReceiver_GenerateWorkItemDocument_TitleTruncation(t *testing.T) {
 	require.Equal(t, strings.Repeat("A", 128), titleValue)
 }
 
+// Test addComment method
+func TestReceiver_AddComment_Success(t *testing.T) {
+	// Setup
+	config := testReceiverConfig1()
+	mockClient := newMockWorkItemTrackingClient()
+	logger := log.NewNopLogger()
+	tmpl := template.SimpleTemplate()
+
+	receiver := &Receiver{
+		logger: logger,
+		client: mockClient,
+		conf:   config,
+		tmpl:   tmpl,
+	}
+
+	// Create a test work item with required fields
+	workItem := &workitemtracking.WorkItem{
+		Id: intPtr(123),
+		Fields: &map[string]interface{}{
+			"System.TeamProject": "TestProject",
+		},
+	}
+
+	// Create test alert data
+	data := &alertmanager.Data{}
+
+	// Test addComment
+	err := receiver.addComment(context.Background(), data, workItem)
+	require.NoError(t, err)
+}
+
+func TestReceiver_AddComment_WithError(t *testing.T) {
+	// Setup
+	config := testReceiverConfig1()
+	mockClient := newMockWorkItemTrackingClientWithCommentError()
+	logger := log.NewNopLogger()
+	tmpl := template.SimpleTemplate()
+
+	receiver := &Receiver{
+		logger: logger,
+		client: mockClient,
+		conf:   config,
+		tmpl:   tmpl,
+	}
+
+	// Create a test work item with required fields
+	workItem := &workitemtracking.WorkItem{
+		Id: intPtr(123),
+		Fields: &map[string]interface{}{
+			"System.TeamProject": "TestProject",
+		},
+	}
+
+	// Create test alert data
+	data := &alertmanager.Data{}
+
+	// Test addComment with error
+	err := receiver.addComment(context.Background(), data, workItem)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create work item comment")
+}
+
 // Test MarshalJSON method
 func TestAzureWorkItemField_MarshalJSON(t *testing.T) {
 	// Test the MarshalJSON method for AzureWorkItemField

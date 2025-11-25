@@ -33,10 +33,11 @@ type mockWorkItemTrackingClient struct {
 	queryCalls     []string
 
 	// Error control flags for testing error paths
-	shouldFailCreate bool
-	shouldFailUpdate bool
-	shouldFailQuery  bool
-	duplicateResults bool
+	shouldFailCreate     bool
+	shouldFailUpdate     bool
+	shouldFailQuery      bool
+	shouldFailAddComment bool
+	duplicateResults     bool
 }
 
 type mockCreateCall struct {
@@ -49,13 +50,14 @@ type mockUpdateCall struct {
 
 func newMockWorkItemTrackingClient() *mockWorkItemTrackingClient {
 	return &mockWorkItemTrackingClient{
-		workItems:        make(map[int]*workitemtracking.WorkItem),
-		workItemsByTag:   make(map[string][]*workitemtracking.WorkItem),
-		nextID:           1,
-		shouldFailCreate: false,
-		shouldFailUpdate: false,
-		shouldFailQuery:  false,
-		duplicateResults: false,
+		workItems:            make(map[int]*workitemtracking.WorkItem),
+		workItemsByTag:       make(map[string][]*workitemtracking.WorkItem),
+		nextID:               1,
+		shouldFailCreate:     false,
+		shouldFailUpdate:     false,
+		shouldFailQuery:      false,
+		shouldFailAddComment: false,
+		duplicateResults:     false,
 	}
 }
 
@@ -192,7 +194,14 @@ func (m *mockWorkItemTrackingClient) AddComment(ctx context.Context, args workit
 
 // [Preview API] Add a comment on a work item.
 func (m *mockWorkItemTrackingClient) AddWorkItemComment(ctx context.Context, args workitemtracking.AddWorkItemCommentArgs) (*workitemtracking.Comment, error) {
-	return &workitemtracking.Comment{}, nil
+	if m.shouldFailAddComment {
+		return nil, errors.New("mock add work item comment failed")
+	}
+
+	commentID := 1
+	return &workitemtracking.Comment{
+		Id: &commentID,
+	}, nil
 }
 
 // [Preview API] Uploads an attachment.
@@ -645,3 +654,10 @@ func (m *mockWorkItemTrackingClient) UpdateWorkItemField(ctx context.Context, ar
 }
 
 //endregion
+
+// Helper function to create a mock client that will fail on AddWorkItemComment
+func newMockWorkItemTrackingClientWithCommentError() *mockWorkItemTrackingClient {
+	client := newMockWorkItemTrackingClient()
+	client.shouldFailAddComment = true
+	return client
+}

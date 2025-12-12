@@ -65,7 +65,7 @@ jobs:
       run: echo "coverage check failed" && exit 1
 
     - name: upload artifact (master.breakdown)
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       if: github.ref_name == 'master'
       with:
         name: master.breakdown
